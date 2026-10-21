@@ -12,7 +12,7 @@ Please subscribe to our newsletter:
 
 ## Community Forum
 We are here with teachers, users and designers:  
-👉🏼 [antura.discourse.group/](https://antura.discourse.group)
+👉🏼 [Discussions](https://github.com/vgwb/Antura/discussions/)
 
 ## GitHub
 The open source repository is here:  
