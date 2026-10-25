@@ -12,8 +12,8 @@ PlayerSettings:
   targetDevice: 2
   useOnDemandResources: 0
   accelerometerFrequency: 0
-  companyName: VGWB
-  productName: Learn with Antura
+  companyName: Lili & Friends
+  productName: "\u062A\u0639\u0644\u0645 \u0627\u0644\u062D\u0631\u0648\u0641 \u0645\u0639 \u0644\u064A\u0644\u064A"
   defaultCursor: {fileID: 0}
   cursorHotspot: {x: 0, y: 0}
   m_SplashScreenBackgroundColor: {r: 1, g: 1, b: 1, a: 1}
@@ -176,11 +176,11 @@ PlayerSettings:
   androidMaxAspectRatio: 2.1
   androidMinAspectRatio: 1
   applicationIdentifier:
-    Android: org.antura.learnwithantura
-    Standalone: org.antura.learnwithantura
-    Tizen: org.eduapp4syria.antura
-    iPhone: org.antura.learnwithantura
-    tvOS: org.eduapp4syria.antura
+    Android: com.lilifriends.letters
+    Standalone: com.lilifriends.letters
+    Tizen: com.lilifriends.letters
+    iPhone: com.lilifriends.letters
+    tvOS: com.lilifriends.letters
   buildNumber:
     Standalone: 3
     VisionOS: 0
