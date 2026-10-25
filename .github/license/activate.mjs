@@ -30,6 +30,23 @@ async function firstVisible(selectors, timeout = 15000) {
   }
   return null;
 }
+// Code is delivered as "<RUN_ID> <code>" in code.txt on branch ci-in.
+async function waitForCode() {
+  const { GITHUB_REPOSITORY, GITHUB_TOKEN, GITHUB_RUN_ID } = process.env;
+  const url = `https://api.github.com/repos/${GITHUB_REPOSITORY}/contents/code.txt?ref=ci-in`;
+  const end = Date.now() + 12 * 60 * 1000;
+  while (Date.now() < end) {
+    try {
+      const r = await fetch(url, { headers: { Authorization: `Bearer ${GITHUB_TOKEN}`, Accept: 'application/vnd.github.raw', 'Cache-Control': 'no-cache' } });
+      if (r.ok) {
+        const [rid, code] = (await r.text()).trim().split(/\s+/);
+        if (rid === GITHUB_RUN_ID && /^\d{4,8}$/.test(code || '')) { console.log('CODE_RECEIVED'); return code; }
+      }
+    } catch {}
+    await new Promise(res => setTimeout(res, 5000));
+  }
+  throw new Error('timed out waiting for verification code');
+}
 async function clickSubmit() {
   const b = await firstVisible(['button[type=submit]', 'input[type=submit]', 'input[name=commit]'], 5000);
   if (b) await b.click(); else await page.keyboard.press('Enter');
@@ -52,6 +69,19 @@ try {
     await page.waitForLoadState('networkidle').catch(() => {});
     await page.waitForTimeout(4000);
     await snap('after-login');
+
+    // ---- Verification code (new location) ----
+    const codeInput = await firstVisible(['input[name*="code" i]', 'input[id*="code" i]', 'input[autocomplete="one-time-code"]', 'input[inputmode="numeric"]'], 6000);
+    if (codeInput) {
+      console.log('WAITING_FOR_CODE');
+      const code = await waitForCode();
+      await codeInput.fill(code);
+      await snap('code-filled');
+      await clickSubmit();
+      await page.waitForLoadState('networkidle').catch(() => {});
+      await page.waitForTimeout(4000);
+      await snap('after-code');
+    }
   }
 
   // ---- Upload .alf ----

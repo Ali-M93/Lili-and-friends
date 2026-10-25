@@ -1,14 +1,17 @@
 name: Unity license (experimental)
 
 # تجربة: نطلع ملف رخصة Unity Personal بدون حاسبة.
-# كل المخرجات (ملف الرخصة والصور) تتشفر قبل الرفع لأن المشروع عام.
+# كل المخرجات (ملف الرخصة والصور والسجل) تتشفر وتترفع لفرع ci-out، لأن المشروع عام.
 on:
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   activate:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
@@ -16,48 +19,33 @@ jobs:
             .github
             ProjectSettings/ProjectVersion.txt
 
-      - name: Pick Unity docker image
-        id: img
-        run: |
-          VER=$(grep 'm_EditorVersion:' ProjectSettings/ProjectVersion.txt | awk '{print $2}')
-          echo "Project Unity version: $VER"
-          TAGS=$(curl -s "https://hub.docker.com/v2/repositories/unityci/editor/tags?name=ubuntu-${VER}-base&page_size=100" | jq -r '.results[].name' | sort -V)
-          echo "Tags for exact version:"; echo "$TAGS"
-          TAG=$(echo "$TAGS" | tail -1)
-          if [ -z "$TAG" ]; then
-            echo "::warning::No docker image for $VER, using latest 6000 base image for the request file"
-            TAG=$(curl -s "https://hub.docker.com/v2/repositories/unityci/editor/tags?name=ubuntu-6000&page_size=100&ordering=last_updated" | jq -r '.results[].name' | grep -E '^ubuntu-6000\.[0-9]+\.[0-9]+f[0-9]+-base-[0-9]+$' | sort -V | tail -1)
-          fi
-          echo "Using unityci/editor:$TAG"
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-
-      - name: Create activation request (.alf)
-        run: |
-          mkdir -p alf
-          docker run --rm -v "$PWD/alf:/alf" -w /alf unityci/editor:${{ steps.img.outputs.tag }} \
-            bash -c 'unity-editor -batchmode -nographics -createManualActivationFile -logFile /dev/stdout -quit || true; ls -la /alf'
-          ls alf/*.alf
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Install browser
-        run: |
-          cd .github/license
-          npm init -y >/dev/null
-          npm install playwright@1.48.2
-          npx playwright install --with-deps chromium
-
-      - name: Activate on Unity website
+      - name: Run activation
         env:
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          ALF_PATH=$(ls $PWD/alf/*.alf | head -1) OUT_DIR=$PWD/out node .github/license/activate.mjs || true
+          mkdir -p out alf
+          exec > >(tee -a out/log.txt) 2>&1
+          set -x
+          VER=$(grep 'm_EditorVersion:' ProjectSettings/ProjectVersion.txt | awk '{print $2}')
+          TAGS=$(curl -s "https://hub.docker.com/v2/repositories/unityci/editor/tags?name=ubuntu-${VER}-base&page_size=100" | jq -r '.results[].name' | sort -V)
+          echo "TAGS_EXACT: $TAGS"
+          TAG=$(echo "$TAGS" | tail -1)
+          if [ -z "$TAG" ]; then
+            TAG=$(curl -s "https://hub.docker.com/v2/repositories/unityci/editor/tags?name=ubuntu-6000&page_size=100&ordering=last_updated" | jq -r '.results[].name' | grep -E '^ubuntu-6000\.[0-9]+\.[0-9]+f[0-9]+-base-[0-9]+$' | sort -V | tail -1)
+            echo "NO_EXACT_IMAGE, fallback: $TAG"
+          fi
+          docker run --rm -v "$PWD/alf:/alf" -w /alf unityci/editor:$TAG \
+            bash -c 'unity-editor -batchmode -nographics -createManualActivationFile -logFile /dev/stdout -quit || true; ls -la /alf' | tail -40
+          ALF=$(ls $PWD/alf/*.alf | head -1)
+          echo "ALF: $ALF"
+          cd .github/license && npm init -y >/dev/null && npm install --silent playwright@1.48.2 && npx playwright install --with-deps chromium >/dev/null && cd -
+          set +x
+          ALF_PATH="$ALF" OUT_DIR=$PWD/out node .github/license/activate.mjs || true
           ls out
 
-      - name: Encrypt outputs
+      - name: Encrypt and push outputs to ci-out
         if: always()
         run: |
           mkdir -p enc
@@ -66,10 +54,10 @@ jobs:
           openssl enc -aes-256-cbc -pbkdf2 -salt -in out.tgz -out enc/out.tgz.enc -pass file:key.bin
           openssl pkeyutl -encrypt -pubin -inkey .github/license/pub.pem -in key.bin -out enc/key.bin.enc
           rm -f key.bin out.tgz
-
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: license-encrypted
-          path: enc
-          retention-days: 3
+          echo "${{ github.run_id }}" > enc/run_id.txt
+          cd enc
+          git init -q -b ci-out
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add . && git commit -qm "encrypted outputs ${{ github.run_id }}"
+          git push -qf "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}" ci-out
