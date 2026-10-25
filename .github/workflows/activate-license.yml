@@ -1,0 +1,75 @@
+name: Unity license (experimental)
+
+# تجربة: نطلع ملف رخصة Unity Personal بدون حاسبة.
+# كل المخرجات (ملف الرخصة والصور) تتشفر قبل الرفع لأن المشروع عام.
+on:
+  workflow_dispatch:
+
+jobs:
+  activate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github
+            ProjectSettings/ProjectVersion.txt
+
+      - name: Pick Unity docker image
+        id: img
+        run: |
+          VER=$(grep 'm_EditorVersion:' ProjectSettings/ProjectVersion.txt | awk '{print $2}')
+          echo "Project Unity version: $VER"
+          TAGS=$(curl -s "https://hub.docker.com/v2/repositories/unityci/editor/tags?name=ubuntu-${VER}-base&page_size=100" | jq -r '.results[].name' | sort -V)
+          echo "Tags for exact version:"; echo "$TAGS"
+          TAG=$(echo "$TAGS" | tail -1)
+          if [ -z "$TAG" ]; then
+            echo "::warning::No docker image for $VER, using latest 6000 base image for the request file"
+            TAG=$(curl -s "https://hub.docker.com/v2/repositories/unityci/editor/tags?name=ubuntu-6000&page_size=100&ordering=last_updated" | jq -r '.results[].name' | grep -E '^ubuntu-6000\.[0-9]+\.[0-9]+f[0-9]+-base-[0-9]+$' | sort -V | tail -1)
+          fi
+          echo "Using unityci/editor:$TAG"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Create activation request (.alf)
+        run: |
+          mkdir -p alf
+          docker run --rm -v "$PWD/alf:/alf" -w /alf unityci/editor:${{ steps.img.outputs.tag }} \
+            bash -c 'unity-editor -batchmode -nographics -createManualActivationFile -logFile /dev/stdout -quit || true; ls -la /alf'
+          ls alf/*.alf
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install browser
+        run: |
+          cd .github/license
+          npm init -y >/dev/null
+          npm install playwright@1.48.2
+          npx playwright install --with-deps chromium
+
+      - name: Activate on Unity website
+        env:
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        run: |
+          ALF_PATH=$(ls $PWD/alf/*.alf | head -1) OUT_DIR=$PWD/out node .github/license/activate.mjs || true
+          ls out
+
+      - name: Encrypt outputs
+        if: always()
+        run: |
+          mkdir -p enc
+          tar czf out.tgz out alf 2>/dev/null || tar czf out.tgz out
+          openssl rand -out key.bin 32
+          openssl enc -aes-256-cbc -pbkdf2 -salt -in out.tgz -out enc/out.tgz.enc -pass file:key.bin
+          openssl pkeyutl -encrypt -pubin -inkey .github/license/pub.pem -in key.bin -out enc/key.bin.enc
+          rm -f key.bin out.tgz
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: license-encrypted
+          path: enc
+          retention-days: 3
