@@ -27,6 +27,21 @@ jobs:
         with:
           lfs: false
 
+      # الأصوات والموديلات محفوظة بـ Git LFS (~1.5 GB). نخزنها بالكاش حتى ما تنزل كل مرة
+      - name: List LFS files
+        run: git lfs ls-files -l | cut -d' ' -f1 | sort > .lfs-assets-id
+
+      - name: Cache LFS
+        uses: actions/cache@v4
+        with:
+          path: .git/lfs
+          key: lfs-${{ hashFiles('.lfs-assets-id') }}
+          restore-keys: |
+            lfs-
+
+      - name: Pull LFS files
+        run: git lfs pull
+
       - name: Cache Unity Library
         uses: actions/cache@v4
         with:
