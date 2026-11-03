@@ -1,0 +1,32 @@
+name: LFS size report
+
+# يحسب حجم ملفات الصوت والموديلات (Git LFS) بدون ما ينزّلها
+on:
+  workflow_dispatch:
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: false
+      - name: Sizes by folder
+        run: |
+          git lfs ls-files -s -n >/dev/null
+          git lfs ls-files -l -s | sed -E 's/^[0-9a-f]+ [-*] //' > lfs.txt
+          python3 - <<'EOF'
+          import re, collections
+          units = {'B':1,'KB':1e3,'MB':1e6,'GB':1e9}
+          tot = collections.Counter(); n = collections.Counter(); all_ = 0
+          for line in open('lfs.txt', encoding='utf-8'):
+              m = re.match(r'(.*) \(([\d.]+) (B|KB|MB|GB)\)$', line.strip())
+              if not m: continue
+              path, v, u = m.groups(); sz = float(v) * units[u]; all_ += sz
+              p = path.split('/')
+              key = '/'.join(p[:3]) if p[1] in ('_lang_bundles', '_discover', '_games') else '/'.join(p[:2])
+              tot[key] += sz; n[key] += 1
+          print(f"TOTAL {all_/1e9:.2f} GB in {sum(n.values())} files")
+          for k, v in tot.most_common(60):
+              print(f"{v/1e6:10.1f} MB  {n[k]:6d}  {k}")
+          EOF
