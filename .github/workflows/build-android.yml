@@ -31,8 +31,9 @@ jobs:
       - name: List LFS files
         run: git lfs ls-files -l | cut -d' ' -f1 | sort > .lfs-assets-id
 
-      - name: Cache LFS
-        uses: actions/cache@v4
+      - name: Restore LFS cache
+        id: lfs-cache
+        uses: actions/cache/restore@v4
         with:
           path: .git/lfs
           key: lfs-${{ hashFiles('.lfs-assets-id') }}
@@ -44,11 +45,19 @@ jobs:
           git lfs pull
           rm -f .lfs-assets-id
 
-      - name: Cache Unity Library
-        uses: actions/cache@v4
+      - name: Save LFS cache
+        if: steps.lfs-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .git/lfs
+          key: ${{ steps.lfs-cache.outputs.cache-primary-key }}
+
+      # نحفظ مجلد Library حتى لو فشل البناء، حتى البناء الجاي يكون أسرع بكثير
+      - name: Restore Unity Library
+        uses: actions/cache/restore@v4
         with:
           path: Library
-          key: Library-Android-${{ hashFiles('Packages/packages-lock.json', 'ProjectSettings/ProjectVersion.txt') }}
+          key: Library-Android-${{ github.run_id }}
           restore-keys: |
             Library-Android-
 
@@ -62,6 +71,13 @@ jobs:
           targetPlatform: Android
           androidExportType: androidPackage
           buildName: LiliLetters
+
+      - name: Save Unity Library
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: Library
+          key: Library-Android-${{ github.run_id }}
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
