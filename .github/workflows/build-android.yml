@@ -79,6 +79,12 @@ jobs:
           path: Library
           key: Library-Android-${{ github.run_id }}
 
+      - name: Show what takes space inside the APK
+        if: success()
+        run: |
+          ls -lh build/Android
+          unzip -l build/Android/*.apk | sort -k1 -n -r | head -40
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
